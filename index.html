@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GeoCerro 3D - Cámara y Brújula</title>
+    <title>GeoCerro 3D - Sol Relativo</title>
     
     <meta name="theme-color" content="#2c3e50">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -262,7 +262,6 @@
             cursor: crosshair;
         }
 
-        /* Botón de permiso superpuesto si no está autorizada */
         .camera-permission-overlay {
             position: absolute;
             inset: 0;
@@ -466,7 +465,6 @@
 
         <!-- Visor de Cámara y Foto -->
         <div class="camera-section" id="camera-box">
-            <!-- Botón obligatorio para forzar el cartel de permisos en el celular -->
             <div id="permission-overlay" class="camera-permission-overlay">
                 <p style="font-size: 0.85rem; color: var(--text-light);">Para apuntar a los cerros necesitamos acceso a tu cámara trasera.</p>
                 <button class="btn btn-warning" onclick="requestCameraPermission()">📷 Permitir y Activar Cámara</button>
@@ -483,9 +481,10 @@
             <div id="target-point" class="target-marker-point"></div>
         </div>
 
+        <!-- Botones de control de cámara mejorados -->
         <div style="padding: 8px 15px; background: #17202a; display: flex; gap: 8px;">
             <button class="btn btn-secondary" style="flex:1" onclick="requestCameraPermission()">🔄 Reiniciar Cámara</button>
-            <button class="btn" style="flex:1" onclick="capturePhoto()">📸 Tomar Foto</button>
+            <button class="btn" style="flex:1" id="btn-action-photo" onclick="handlePhotoAction()">📸 Tomar Foto</button>
         </div>
 
         <div class="map-section">
@@ -508,6 +507,7 @@
         let videoStream = null;
         let absoluteSunAzimuth = 0;
         let relativeSunAngle = 90;
+        let isPhotoTaken = false;
 
         let scene, camera, renderer, sunMesh, sunGroup;
         let isDragging = false;
@@ -756,7 +756,6 @@
             return { lat: lat2 * 180 / Math.PI, lon: lon2 * 180 / Math.PI };
         }
 
-        // Función para forzar la solicitud de permisos de cámara mediante un botón táctil
         async function requestCameraPermission() {
             const video = document.getElementById('camera-feed');
             const overlay = document.getElementById('permission-overlay');
@@ -765,27 +764,39 @@
             img.style.display = 'none';
             video.style.display = 'block';
             document.getElementById('camera-reticle').style.display = 'flex';
+            document.getElementById('target-point').style.display = 'none';
+            isPhotoTaken = false;
+            document.getElementById('btn-action-photo').innerText = '📸 Tomar Foto';
 
             try {
                 if (videoStream) {
                     videoStream.getTracks().forEach(t => t.stop());
                 }
 
-                // Intenta abrir la cámara trasera obligatoriamente
                 videoStream = await navigator.mediaDevices.getUserMedia({
                     video: { facingMode: { exact: "environment" } },
                     audio: false
                 }).catch(() => {
-                    // Si el dispositivo no tiene cámara trasera estricta, abre cualquiera disponible
                     return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
                 });
 
                 video.srcObject = videoStream;
-                overlay.style.display = 'none'; // Oculta el aviso de permisos si tuvo éxito
-                showToast("¡Cámara activada con éxito!");
+                overlay.style.display = 'none';
+                showToast("Cámara lista");
             } catch (err) {
                 showToast("Permiso denegado o cámara no disponible.");
                 overlay.style.display = 'flex';
+            }
+        }
+
+        // Función inteligente: si ya sacó foto, la descarta y vuelve a abrir la cámara para reintentar al instante.
+        function handlePhotoAction() {
+            if (isPhotoTaken) {
+                // Si ya hay foto, actúa como "Volver a Sacar Foto"
+                requestCameraPermission();
+            } else {
+                // Si la cámara está activa, toma la foto
+                capturePhoto();
             }
         }
 
@@ -793,8 +804,7 @@
             const video = document.getElementById('camera-feed');
             const img = document.getElementById('captured-image');
             
-            if (!video.srcObject) {
-                showToast("Primero debés activar la cámara");
+            if (!video.srcObject || video.style.display === 'none') {
                 requestCameraPermission();
                 return;
             }
@@ -809,7 +819,10 @@
             video.style.display = 'none';
             img.style.display = 'block';
             document.getElementById('camera-reticle').style.display = 'none';
-            showToast("Foto tomada. Tocá el objetivo.");
+            
+            isPhotoTaken = true;
+            document.getElementById('btn-action-photo').innerText = '🔄 Sacar Otra Foto';
+            showToast("Foto tomada. Tocá el objetivo o sacá otra.");
         }
 
         function markTargetOnImage(event) {
