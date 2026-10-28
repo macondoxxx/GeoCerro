@@ -416,7 +416,6 @@
             
             <div id="tab-sunrel" class="tab-content active">
                 <div class="sun-ui-grid">
-                    <!-- Cúpula 3D con Flecha Robusta Estilizada y Sol arrastrable -->
                     <div id="dome-3d-container">
                         <canvas id="dome-canvas"></canvas>
                         <div class="dome-overlay-info">
@@ -425,7 +424,6 @@
                             Sol Relativo: <span id="relative-sun-val" style="color:var(--warning)">270° (Izquierda)</span>
                         </div>
                     </div>
-                    <!-- Mini Radar 2D Vista Cenital -->
                     <div class="radar-container">
                         <span class="radar-title">📍 Vista Superior</span>
                         <canvas id="radar-canvas"></canvas>
@@ -710,7 +708,7 @@
             showToast(`Norte calculado. Mirada a ${Math.round(calculatedAzimuth)}°`);
         }
 
-        // --- ESCENA 3D CON FLECHA CHUNKY ROBUSTA Y SOL MOVIBLE ---
+        // --- ESCENA 3D CON FLECHA GORDITA, CORTA Y DE PERFIL BAJO ---
         function init3DScene() {
             const container = document.getElementById('dome-3d-container');
             const canvas = document.getElementById('dome-canvas');
@@ -727,31 +725,25 @@
             const domeMat = new THREE.MeshBasicMaterial({ color: 0x34495e, wireframe: true, transparent: true, opacity: 0.3 });
             scene.add(new THREE.Mesh(domeGeo, domeMat));
 
-            // Flecha 3D Robusta / Estilo Chunks Sólidos (Similar a la referencia)
+            // Flecha Gordita, Corta y de Perfil Bajo (Achatada y cercana al piso)
             const arrowGroup = new THREE.Group();
-            
-            // Cuerpo de la flecha (Cubo alargado y ancho)
-            const shaftGeo = new THREE.BoxGeometry(0.22, 0.22, 0.7);
             const arrowMat = new THREE.MeshLambertMaterial({ color: 0xe67e22 });
+            
+            // Cuerpo ancho y muy bajito (casi pegado al piso Y=0)
+            const shaftGeo = new THREE.BoxGeometry(0.35, 0.08, 0.45);
             const shaft = new THREE.Mesh(shaftGeo, arrowMat);
-            shaft.position.set(0, 0, -0.35);
+            shaft.position.set(0, 0.04, 0.1);
 
-            // Cabeza de la flecha (Pirámide / Cono cuadrado ancho)
-            const headGeo = new THREE.ConeGeometry(0.38, 0.45, 4);
-            headGeo.rotateY(Math.PI / 4); // Alinear vértices
+            // Punta ancha y corta (Perfil bajo)
+            const headGeo = new THREE.ConeGeometry(0.5, 0.3, 4);
+            headGeo.rotateY(Math.PI / 4);
             headGeo.rotateX(Math.PI / 2);
             const head = new THREE.Mesh(headGeo, arrowMat);
-            head.position.set(0, 0, -0.85);
+            head.position.set(0, 0.04, -0.25);
 
             arrowGroup.add(shaft);
             arrowGroup.add(head);
             scene.add(arrowGroup);
-
-            // Base central sólida
-            const baseGeo = new THREE.BoxGeometry(0.3, 0.15, 0.3);
-            const baseMesh = new THREE.Mesh(baseGeo, arrowMat);
-            baseMesh.position.set(0, 0, 0);
-            scene.add(baseMesh);
 
             // Grupo del Sol que rota alrededor tuyo
             sunGroup = new THREE.Group();
@@ -761,10 +753,8 @@
             sunGroup.add(sunMesh);
             scene.add(sunGroup);
 
-            // Posicionar Sol inicial exactamente a 270° (Izquierda)
             updateSunRotation(270);
 
-            // Luz para dar volumen facetado a la flecha robusta
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
             scene.add(ambientLight);
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -821,7 +811,6 @@
             renderer.setSize(container.clientWidth, container.clientHeight);
         }
 
-        // --- MINI RADAR 2D (VISTA DESDE ARRIBA) ---
         function initRadar2D() {
             drawRadar2D();
         }
