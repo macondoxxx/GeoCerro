@@ -708,7 +708,7 @@
             showToast(`Norte calculado. Mirada a ${Math.round(calculatedAzimuth)}°`);
         }
 
-        // --- ESCENA 3D CON FLECHA GORDITA, CORTA Y DE PERFIL BAJO ---
+        // --- ESCENA 3D CON FLECHA 3D REDONDEADA, CORTA Y ESTILIZADA ---
         function init3DScene() {
             const container = document.getElementById('dome-3d-container');
             const canvas = document.getElementById('dome-canvas');
@@ -725,25 +725,39 @@
             const domeMat = new THREE.MeshBasicMaterial({ color: 0x34495e, wireframe: true, transparent: true, opacity: 0.3 });
             scene.add(new THREE.Mesh(domeGeo, domeMat));
 
-            // Flecha Gordita, Corta y de Perfil Bajo (Achatada y cercana al piso)
-            const arrowGroup = new THREE.Group();
-            const arrowMat = new THREE.MeshLambertMaterial({ color: 0xe67e22 });
-            
-            // Cuerpo ancho y muy bajito (casi pegado al piso Y=0)
-            const shaftGeo = new THREE.BoxGeometry(0.35, 0.08, 0.45);
-            const shaft = new THREE.Mesh(shaftGeo, arrowMat);
-            shaft.position.set(0, 0.04, 0.1);
+            // Silueta exacta de flecha ancha, gordita y corta con bordes estilizados
+            const arrowShape = new THREE.Shape();
+            arrowShape.moveTo(-0.2,  0.3);   // Base izquierda
+            arrowShape.lineTo( 0.2,  0.3);   // Base derecha
+            arrowShape.lineTo( 0.2, -0.05);  // Cuerpo derecho
+            arrowShape.lineTo( 0.45, -0.05); // Ala derecha de la punta
+            arrowShape.lineTo( 0.0, -0.5);   // Punta frontal
+            arrowShape.lineTo(-0.45, -0.05); // Ala izquierda de la punta
+            arrowShape.lineTo(-0.2, -0.05);  // Cuerpo izquierdo
+            arrowShape.closePath();
 
-            // Punta ancha y corta (Perfil bajo)
-            const headGeo = new THREE.ConeGeometry(0.5, 0.3, 4);
-            headGeo.rotateY(Math.PI / 4);
-            headGeo.rotateX(Math.PI / 2);
-            const head = new THREE.Mesh(headGeo, arrowMat);
-            head.position.set(0, 0.04, -0.25);
+            // Extrusión con bisel redondeado pronunciado para darle el aspecto suave y 3D de emoji/botón
+            const extrudeSettings = {
+                steps: 1,
+                depth: 0.12,          // Perfil bajito
+                bevelEnabled: true,
+                bevelThickness: 0.06, // Bordes abombados suaves
+                bevelSize: 0.05,
+                bevelSegments: 5      // Máxima suavidad redondeada
+            };
 
-            arrowGroup.add(shaft);
-            arrowGroup.add(head);
-            scene.add(arrowGroup);
+            const geometry = new THREE.ExtrudeGeometry(arrowShape, extrudeSettings);
+            geometry.rotateX(Math.PI / 2); // Acostarla sobre el piso
+            geometry.center();
+
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0xf39c12, 
+                roughness: 0.3,  // Aspecto semi-brillante / satinado
+                metalness: 0.1 
+            });
+            const smoothArrow = new THREE.Mesh(geometry, material);
+            smoothArrow.position.set(0, 0.06, 0);
+            scene.add(smoothArrow);
 
             // Grupo del Sol que rota alrededor tuyo
             sunGroup = new THREE.Group();
@@ -755,10 +769,11 @@
 
             updateSunRotation(270);
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            // Luces para resaltar el relieve y los bordes redondeados
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambientLight);
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            dirLight.position.set(5, 10, 7);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+            dirLight.position.set(5, 12, 8);
             scene.add(dirLight);
 
             container.addEventListener('pointerdown', (e) => {
