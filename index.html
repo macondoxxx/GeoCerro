@@ -126,7 +126,6 @@
             gap: 8px;
         }
 
-        /* Contenedor principal del bloque 3D + Mini Radar 2D */
         .sun-ui-grid {
             display: grid;
             grid-template-columns: 1fr 110px;
@@ -150,7 +149,6 @@
             height: 100%;
         }
 
-        /* Mini Radar 2D (Vista desde arriba) */
         .radar-container {
             background-color: #0d131a;
             border: 1px solid #34495e;
@@ -418,16 +416,16 @@
             
             <div id="tab-sunrel" class="tab-content active">
                 <div class="sun-ui-grid">
-                    <!-- Cúpula 3D con Flecha central y Sol arrastrable -->
+                    <!-- Cúpula 3D con Flecha Robusta Estilizada y Sol arrastrable -->
                     <div id="dome-3d-container">
                         <canvas id="dome-canvas"></canvas>
                         <div class="dome-overlay-info">
                             🎯 <b>Mirada:</b> Al Objetivo<br>
                             👉 <b>Arrastrá el Sol</b><br>
-                            Sol Relativo: <span id="relative-sun-val" style="color:var(--warning)">90° (Derecha)</span>
+                            Sol Relativo: <span id="relative-sun-val" style="color:var(--warning)">270° (Izquierda)</span>
                         </div>
                     </div>
-                    <!-- Mini Radar 2D Vista Cenital (Desde arriba) -->
+                    <!-- Mini Radar 2D Vista Cenital -->
                     <div class="radar-container">
                         <span class="radar-title">📍 Vista Superior</span>
                         <canvas id="radar-canvas"></canvas>
@@ -547,7 +545,7 @@
         let map, userMarker, targetMarker, sightLine;
         let videoStream = null;
         let absoluteSunAzimuth = 0;
-        let relativeSunAngle = 270; // Empezamos probando en 270° exactos (izquierda)
+        let relativeSunAngle = 270;
         let isPhotoTaken = false;
 
         let scene, camera, renderer, sunMesh, sunGroup;
@@ -712,7 +710,7 @@
             showToast(`Norte calculado. Mirada a ${Math.round(calculatedAzimuth)}°`);
         }
 
-        // --- ESCENA 3D CON FLECHA 3D REAL Y SOL MOVIBLE ---
+        // --- ESCENA 3D CON FLECHA CHUNKY ROBUSTA Y SOL MOVIBLE ---
         function init3DScene() {
             const container = document.getElementById('dome-3d-container');
             const canvas = document.getElementById('dome-canvas');
@@ -729,27 +727,31 @@
             const domeMat = new THREE.MeshBasicMaterial({ color: 0x34495e, wireframe: true, transparent: true, opacity: 0.3 });
             scene.add(new THREE.Mesh(domeGeo, domeMat));
 
-            // Flecha 3D Real y Clara apuntando al frente (Tu Mirada al Objetivo)
+            // Flecha 3D Robusta / Estilo Chunks Sólidos (Similar a la referencia)
             const arrowGroup = new THREE.Group();
-            const shaftGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.6, 8);
-            shaftGeo.rotateX(Math.PI / 2);
-            const shaftMat = new THREE.MeshBasicMaterial({ color: 0xe67e22 });
-            const shaft = new THREE.Mesh(shaftGeo, shaftMat);
-            shaft.position.set(0, 0, -0.4);
+            
+            // Cuerpo de la flecha (Cubo alargado y ancho)
+            const shaftGeo = new THREE.BoxGeometry(0.22, 0.22, 0.7);
+            const arrowMat = new THREE.MeshLambertMaterial({ color: 0xe67e22 });
+            const shaft = new THREE.Mesh(shaftGeo, arrowMat);
+            shaft.position.set(0, 0, -0.35);
 
-            const headGeo = new THREE.ConeGeometry(0.12, 0.35, 8);
+            // Cabeza de la flecha (Pirámide / Cono cuadrado ancho)
+            const headGeo = new THREE.ConeGeometry(0.38, 0.45, 4);
+            headGeo.rotateY(Math.PI / 4); // Alinear vértices
             headGeo.rotateX(Math.PI / 2);
-            const headMat = new THREE.MeshBasicMaterial({ color: 0xf39c12 });
-            const head = new THREE.Mesh(headGeo, headMat);
-            head.position.set(0, 0, -0.75);
+            const head = new THREE.Mesh(headGeo, arrowMat);
+            head.position.set(0, 0, -0.85);
 
             arrowGroup.add(shaft);
             arrowGroup.add(head);
             scene.add(arrowGroup);
 
-            // Centro "Yo"
-            const centerMesh = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 16), new THREE.MeshBasicMaterial({ color: 0xe67e22 }));
-            scene.add(centerMesh);
+            // Base central sólida
+            const baseGeo = new THREE.BoxGeometry(0.3, 0.15, 0.3);
+            const baseMesh = new THREE.Mesh(baseGeo, arrowMat);
+            baseMesh.position.set(0, 0, 0);
+            scene.add(baseMesh);
 
             // Grupo del Sol que rota alrededor tuyo
             sunGroup = new THREE.Group();
@@ -762,7 +764,12 @@
             // Posicionar Sol inicial exactamente a 270° (Izquierda)
             updateSunRotation(270);
 
-            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+            // Luz para dar volumen facetado a la flecha robusta
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(5, 10, 7);
+            scene.add(dirLight);
 
             container.addEventListener('pointerdown', (e) => {
                 isDragging = true;
@@ -831,7 +838,6 @@
 
             ctx.clearRect(0, 0, width, height);
 
-            // Círculo base del radar
             ctx.beginPath();
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
             ctx.fillStyle = '#111a22';
@@ -840,7 +846,6 @@
             ctx.lineWidth = 1.5;
             ctx.stroke();
 
-            // Cruz central (N, S, E, O)
             ctx.strokeStyle = '#2c3e50';
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -848,32 +853,26 @@
             ctx.moveTo(cx - radius, cy); ctx.lineTo(cx + radius, cy);
             ctx.stroke();
 
-            // Texto indicador "Frente" (Tu mirada)
             ctx.fillStyle = '#e67e22';
             ctx.font = '8px sans-serif';
             ctx.fillText("Frente", cx - 12, cy - radius - 2);
 
-            // Flecha de tu mirada (Apunta siempre hacia arriba/al frente en el radar)
             ctx.strokeStyle = '#e67e22';
-            ctx.lineWidth = 2;
+            ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(cx, cy);
-            ctx.lineTo(cx, cy - radius + 5);
+            ctx.lineTo(cx, cy - radius + 6);
             ctx.stroke();
 
-            // Punto central "Yo"
             ctx.fillStyle = '#e67e22';
             ctx.beginPath();
-            ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+            ctx.arc(cx, cy, 4, 0, Math.PI * 2);
             ctx.fill();
 
-            // Posición del Sol en el radar 2D según el ángulo relativo
-            // Como el ángulo 0° es arriba (frente), convertimos radianes restando Math.PI/2
             const sunRad = (relativeSunAngle - 90) * Math.PI / 180;
             const sunX = cx + (radius - 8) * Math.cos(sunRad);
             const sunY = cy + (radius - 8) * Math.sin(sunRad);
 
-            // Esfera del Sol amarilla en el radar
             ctx.fillStyle = '#f1c40f';
             ctx.beginPath();
             ctx.arc(sunX, sunY, 5, 0, Math.PI * 2);
