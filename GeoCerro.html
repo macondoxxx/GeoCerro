@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GeoCerro - Visualizador de Puntos Distantes</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+
+        /* Canvas Overlay & Crosshairs */
+        .crosshair-cursor {
+            cursor: crosshair;
+        }
+
+        /* Compass Dial custom range */
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+        }
+
+        /* Custom Leaflet Dark/Topo style overrides */
+        .leaflet-container {
+            background-color: #1e293b !important;
+            border-radius: 0.75rem;
+        }
+
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+            background: #0f172a !important;
+            color: #f8fafc !important;
+            border: 1px solid #334155;
+        }
+
+        /* Hide scrollbars for clean app feel */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex flex-col overflow-hidden select-none">
+
+    <!-- Header / Navbar Top -->
+    <header class="bg-slate-900 border-b border-slate-800 p-3 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow-lg shadow-emerald-900/40">
+                <i class="fa-solid fa-[#000] fa-mountain-sun text-lg"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-base leading-none text-slate-100">GeoCerro</h1>
+                <span class="text-[10px] text-emerald-400 font-medium">Localizador de Horizonte</span>
+            </div>
+        </div>
+        
+        <!-- Status Badges -->
+        <div class="flex items-center gap-2 text-xs">
+            <span id="gps-status" class="px-2 py-1 rounded-full bg-slate-800 text-slate-400 flex items-center gap-1 border border-slate-700">
+                <i class="fa-solid fa-location-crosshairs text-amber-500"></i>
+                <span id="gps-text">GPS Buscando...</span>
+            </span>
+        </div>
+    </header>
+
+    <!-- Main Content Tabs -->
+    <main class="flex-1 relative overflow-hidden flex flex-col">
+        
+        <!-- TAB 1: CAMERA & CAPTURE -->
+        <section id="tab-camera" class="absolute inset-0 flex flex-col bg-slate-950 transition-opacity duration-300 z-10">
+            <!-- Camera / Image Container -->
+            <div class="relative flex-1 bg-black overflow-hidden flex items-center justify-center">
+                
+                <!-- Live Video Feed -->
+                <video id="video-feed" autoplay playsinline class="w-full h-full object-cover hidden"></video>
+                
+                <!-- Captured Image Canvas -->
+                <canvas id="photo-canvas" class="w-full h-full object-contain hidden crosshair-cursor"></canvas>
+
+                <!-- Placeholder fallback if no camera -->
+                <div id="camera-placeholder" class="text-center p-6 text-slate-500 flex flex-col items-center gap-3">
+                    <i class="fa-solid fa-camera text-5xl text-slate-700 animate-pulse"></i>
+                    <p class="text-sm">Inicia la cámara para apuntar al objetivo distante (ej: lago, árbol o cumbre)</p>
+                    <button id="btn-start-cam" class="mt-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-semibold shadow-lg shadow-emerald-900/30">
+                        <i class="fa-solid fa-power-off mr-2"></i>Activar Cámara
+                    </button>
+                </div>
+
+                <!-- Overlay Crosshair & Reticle -->
+                <div id="reticle-overlay" class="absolute inset-0 pointer-events-none hidden flex items-center justify-center">
+                    <div class="w-12 h-12 border-2 border-emerald-400/50 rounded-full flex items-center justify-center">
+                        <div class="w-2 h-2 bg-emerald-400 rounded-full"></div>
+                    </div>
+                    <div class="absolute w-full h-[1px] bg-emerald-500/20"></div>
+                    <div class="absolute h-full w-[1px] bg-emerald-500/20"></div>
+                </div>
+
+                <!-- Instruction Overlay when Photo Captured -->
+                <div id="capture-instruction" class="absolute top-4 left-4 right-4 bg-slate-900/90 backdrop-blur-md border border-slate-700 p-3 rounded-xl text-xs text-center text-slate-200 hidden shadow-xl z-20">
+                    <i class="fa-solid fa-[#000] fa-hand-pointer text-emerald-400 mr-1 text-sm"></i>
+                    <strong>Toca sobre la foto</strong> exactamente donde está el objeto para calcular su vector.
+                </div>
+            </div>
+
+            <!-- Compass & Orientation Settings Panel -->
+            <div class="bg-slate-900 border-t border-slate-800 p-3 flex flex-col gap-3 shrink-0">
+                
+                <!-- Compass Mode Select -->
+                <div class="flex items-center justify-between text-xs gap-2">
+                    <span class="text-slate-400 font-medium">Modo Azimut:</span>
+                    <select id="compass-mode" class="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 focus:outline-none focus:border-emerald-500 text-xs">
+                        <option value="auto">📡 Sensor Auto (Brújula)</option>
+                        <option value="gps">🚶 Rumbo GPS (En movimiento)</option>
+                        <option value="manual">⚙️ Alineación Manual (Sin brújula)</option>
+                    </select>
+                </div>
+
+                <!-- Manual Compass Slider (Visible in Manual mode or fallback) -->
+                <div id="manual-heading-container" class="flex flex-col gap-1 hidden">
+                    <div class="flex justify-between text-xs text-slate-400">
+                        <span>Ajustar Rumbo Manual:</span>
+                        <span id="manual-heading-val" class="text-emerald-400 font-bold">0° (Norte)</span>
+                    </div>
+                    <input type="range" id="manual-heading-slider" min="0" max="359" value="0" class="w-full accent-emerald-500 bg-slate-800 rounded-lg h-2 cursor-pointer">
+                </div>
+
+                <!-- Live Compass Heading Display -->
+                <div class="flex items-center justify-between bg-slate-950 p-2.5 rounded-xl border border-slate-800">
+                    <div class="flex items-center gap-2">
+                        <div class="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-slate-300">
+                            <i id="compass-icon" class="fa-solid fa-compass text-emerald-400 transition-transform duration-200"></i>
+                        </div>
+                        <div>
+                            <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Orientación de Toma</div>
+                            <div class="text-xs font-bold text-slate-200"><span id="heading-display">---</span>° (<span id="heading-cardinal">---</span>)</div>
+                        </div>
+                    </div>
+
+                    <!-- Estimar Distancia Inicial -->
+                    <div class="flex items-center gap-1">
+                        <span class="text-[10px] text-slate-400 mr-1">Distancia Est.:</span>
+                        <input type="number" id="estimated-dist" value="1500" step="100" min="100" max="50000" class="w-16 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-xs text-center text-slate-100">
+                        <span class="text-xs text-slate-400">m</span>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-capture" class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 text-sm">
+                        <i class="fa-solid fa-camera"></i> Capturar Foto
+                    </button>
+                    <button id="btn-re-take" class="bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold py-2.5 rounded-xl flex items-center justify-center gap-2 border border-slate-700 text-sm hidden">
+                        <i class="fa-solid fa-rotate-left"></i> Nueva Toma
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB 2: MAP & CALCULATIONS -->
+        <section id="tab-map" class="absolute inset-0 flex flex-col bg-slate-950 opacity-0 pointer-events-none transition-opacity duration-300 z-10">
+            <!-- Leaflet Map Container -->
+            <div id="map" class="flex-1 w-full h-full"></div>
+
+            <!-- Target Data Panel Overlay at Bottom -->
+            <div class="bg-slate-900 border-t border-slate-800 p-3 flex flex-col gap-2 shrink-0">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                    <span class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <i class="fa-solid fa-location-dot text-red-500"></i> Coordenadas Calculadas
+                    </span>
+                    <span id="target-bearing" class="text-xs bg-emerald-950 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800/50 font-mono">
+                        Rumbo: ---°
+                    </span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2 text-xs">
+                    <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                        <div class="text-[10px] text-slate-500">Distancia Estimada</div>
+                        <div id="calc-distance" class="text-sm font-bold text-slate-100">--- m</div>
+                    </div>
+                    <div class="bg-slate-950 p-2 rounded-lg border border-slate-800">
+                        <div class="text-[10px] text-slate-500">Ubicación (Lat, Lng)</div>
+                        <div id="calc-coords" class="text-xs font-mono font-semibold text-slate-200 truncate">---, ---</div>
+                    </div>
+                </div>
+
+                <!-- Save Waypoint Button -->
+                <button id="btn-save-waypoint" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-blue-950/40">
+                    <i class="fa-solid fa-bookmark"></i> Guardar Objetivo en Historial
+                </button>
+            </div>
+        </section>
+
+        <!-- TAB 3: SAVED WAYPOINTS -->
+        <section id="tab-history" class="absolute inset-0 flex flex-col bg-slate-950 opacity-0 pointer-events-none transition-opacity duration-300 z-10 p-4 overflow-y-auto no-scrollbar">
+            <h2 class="text-base font-bold text-slate-200 mb-3 flex items-center gap-2">
+                <i class="fa-solid fa-box-archive text-emerald-400"></i> Puntos Registrados
+            </h2>
+            <div id="history-list" class="flex flex-col gap-3">
+                <!-- Items dynamically rendered here -->
+                <div class="text-center py-10 text-slate-500 text-xs">
+                    No hay puntos guardados todavía. Realiza un cálculo para guardar tus hallazgos.
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="bg-slate-900 border-t border-slate-800 flex items-center justify-around p-2 shrink-0 z-30">
+        <button id="nav-btn-camera" class="flex flex-col items-center gap-1 text-emerald-400 text-xs font-semibold py-1 px-4 rounded-lg">
+            <i class="fa-solid fa-camera text-base"></i>
+            <span>Cámara</span>
+        </button>
+        <button id="nav-btn-map" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 text-xs font-semibold py-1 px-4 rounded-lg">
+            <i class="fa-solid fa-map-location-dot text-base"></i>
+            <span>Mapa</span>
+        </button>
+        <button id="nav-btn-history" class="flex flex-col items-center gap-1 text-slate-400 hover:text-slate-200 text-xs font-semibold py-1 px-4 rounded-lg">
+            <i class="fa-solid fa-clock-rotate-left text-base"></i>
+            <span>Guardados</span>
+        </button>
+    </nav>
+
+    <!-- App Logic & Scripts -->
+    <script>
+        // --- State Variables ---
+        let currentPos = { lat: -32.8895, lng: -68.8458 }; // Fallback Mendoza/Cordillera
+        let hasGPS = false;
+        let sensorHeading = 0;
+        let gpsHeading = null;
+        let manualHeading = 0;
+        let selectedCompassMode = 'auto'; // 'auto', 'gps', 'manual'
+        
+        let videoStream = null;
+        let capturedImageData = null;
+        let markedPixel = null; // {x, y}
+        
+        // FOV de cámara típico en móviles (horizontal approx ~60 deg)
+        const CAMERA_FOV_H = 60; 
+
+        // Target calculation results
+        let currentTarget = null; // {lat, lng, distance, bearing, name}
+
+        // Leaflet Map Components
+        let map = null;
+        let userMarker = null;
+        let targetMarker = null;
+        let rayPolyline = null;
+
+        // --- DOM Elements ---
+        const videoFeed = document.getElementById('video-feed');
+        const photoCanvas = document.getElementById('photo-canvas');
+        const cameraPlaceholder = document.getElementById('camera-placeholder');
+        const btnStartCam = document.getElementById('btn-start-cam');
+        const btnCapture = document.getElementById('btn-capture');
+        const btnReTake = document.getElementById('btn-re-take');
+        const reticleOverlay = document.getElementById('reticle-overlay');
+        const captureInstruction = document.getElementById('capture-instruction');
+        
+        const compassModeSelect = document.getElementById('compass-mode');
+        const manualHeadingContainer = document.getElementById('manual-heading-container');
+        const manualHeadingSlider = document.getElementById('manual-heading-slider');
+        const manualHeadingVal = document.getElementById('manual-heading-val');
+        const headingDisplay = document.getElementById('heading-display');
+        const headingCardinal = document.getElementById('heading-cardinal');
+        const compassIcon = document.getElementById('compass-icon');
+        const estimatedDistInput = document.getElementById('estimated-dist');
+        const gpsStatusText = document.getElementById('gps-text');
+
+        // Navigation Tabs
+        const tabCamera = document.getElementById('tab-camera');
+        const tabMap = document.getElementById('tab-map');
+        const tabHistory = document.getElementById('tab-history');
+
+        const navBtnCamera = document.getElementById('nav-btn-camera');
+        const navBtnMap = document.getElementById('nav-btn-map');
+        const navBtnHistory = document.getElementById('nav-btn-history');
+
+        // --- Initialization ---
+        window.addEventListener('DOMContentLoaded', () => {
+            initGPS();
+            initSensors();
+            initMap();
+            loadSavedWaypoints();
+
+            // Set default manual heading to slider value
+            manualHeading = parseInt(manualHeadingSlider.value, 10);
+            updateCompassDisplay();
+        });
+
+        // --- GPS Tracker ---
+        function initGPS() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.watchPosition(
+                    (pos) => {
+                        hasGPS = true;
+                        currentPos.lat = pos.coords.latitude;
+                        currentPos.lng = pos.coords.longitude;
+                        
+                        // Si el usuario se está moviendo, capturar rumbo GPS
+                        if (pos.coords.heading !== null && !isNaN(pos.coords.heading)) {
+                            gpsHeading = pos.coords.heading;
+                        }
+
+                        gpsStatusText.textContent = `${currentPos.lat.toFixed(4)}, ${currentPos.lng.toFixed(4)}`;
+                        updateUserMapPosition();
+                    },
+                    (err) => {
+                        gpsStatusText.textContent = "GPS sin señal (Usando Aprox.)";
+                    },
+                    { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+                );
+            } else {
+                gpsStatusText.textContent = "GPS no disponible";
+            }
+        }
+
+        // --- Hardware Sensors (Orientation / Compass) ---
+        function initSensors() {
+            // Android / Generic W3C Orientation
+            if ('DeviceOrientationEvent' in window) {
+                window.addEventListener('deviceorientation', handleOrientation, true);
+            }
+            
+            // iOS Permission check if necessary
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // Request on click if needed
+            }
+        }
+
+        function handleOrientation(e) {
+            let heading = null;
+            if (e.webkitCompassHeading) {
+                // iOS compass
+                heading = e.webkitCompassHeading;
+            } else if (e.alpha !== null) {
+                // Android deviceorientation (alpha: 0..360)
+                heading = 360 - e.alpha;
+            }
+
+            if (heading !== null) {
+                sensorHeading = (heading + 360) % 360;
+                if (selectedCompassMode === 'auto') {
+                    updateCompassDisplay();
+                }
+            }
+        }
+
+        // --- Compass Mode & Calculations ---
+        compassModeSelect.addEventListener('change', (e) => {
+            selectedCompassMode = e.target.value;
+            if (selectedCompassMode === 'manual') {
+                manualHeadingContainer.classList.remove('hidden');
+            } else {
+                manualHeadingContainer.classList.add('hidden');
+            }
+            updateCompassDisplay();
+        });
+
+        manualHeadingSlider.addEventListener('input', (e) => {
+            manualHeading = parseInt(e.target.value, 10);
+            manualHeadingVal.textContent = `${manualHeading}° (${getCardinal(manualHeading)})`;
+            if (selectedCompassMode === 'manual') {
+                updateCompassDisplay();
+            }
+        });
+
+        function getActiveHeading() {
+            if (selectedCompassMode === 'manual') return manualHeading;
+            if (selectedCompassMode === 'gps' && gpsHeading !== null) return gpsHeading;
+            return sensorHeading;
+        }
+
+        function updateCompassDisplay() {
+            const heading = Math.round(getActiveHeading());
+            headingDisplay.textContent = heading;
+            headingCardinal.textContent = getCardinal(heading);
+            compassIcon.style.transform = `rotate(${heading}deg)`;
+        }
+
+        function getCardinal(deg) {
+            const directions = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
+            return directions[Math.round(deg / 45) % 8];
+        }
+
+        // --- Camera Handling ---
+        async function startCamera() {
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { exact: "environment" } },
+                    audio: false
+                }).catch(() => {
+                    // Fallback to any camera if environment camera fails
+                    return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                });
+
+                videoFeed.srcObject = videoStream;
+                videoFeed.classList.remove('hidden');
+                cameraPlaceholder.classList.add('hidden');
+                reticleOverlay.classList.remove('hidden');
+            } catch (err) {
+                alert("No se pudo acceder a la cámara. Asegúrate de dar los permisos correspondientes.");
+            }
+        }
+
+        btnStartCam.addEventListener('click', startCamera);
+
+        btnCapture.addEventListener('click', () => {
+            if (!videoStream && videoFeed.classList.contains('hidden')) {
+                // Simular toma si la cámara no está activa
+                startCamera().then(takeSnap).catch(takeSnap);
+            } else {
+                takeSnap();
+            }
+        });
+
+        function takeSnap() {
+            const ctx = photoCanvas.getContext('2d');
+            photoCanvas.width = videoFeed.videoWidth || 1280;
+            photoCanvas.height = videoFeed.videoHeight || 720;
+
+            if (!videoFeed.classList.contains('hidden') && videoFeed.videoWidth > 0) {
+                ctx.drawImage(videoFeed, 0, 0, photoCanvas.width, photoCanvas.height);
+            } else {
+                // Dibujar foto sintética de prueba si no hay cámara disponible
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(0, 0, photoCanvas.width, photoCanvas.height);
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath();
+                ctx.moveTo(0, photoCanvas.height * 0.7);
+                ctx.lineTo(photoCanvas.width * 0.4, photoCanvas.height * 0.3);
+                ctx.lineTo(photoCanvas.width * 0.7, photoCanvas.height * 0.5);
+                ctx.lineTo(photoCanvas.width, photoCanvas.height * 0.6);
+                ctx.lineTo(photoCanvas.width, photoCanvas.height);
+                ctx.lineTo(0, photoCanvas.height);
+                ctx.fill();
+                
+                // Dibujar un "lago" sintético
+                ctx.fillStyle = '#0284c7';
+                ctx.beginPath();
+                ctx.ellipse(photoCanvas.width * 0.5, photoCanvas.height * 0.75, 150, 40, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '24px Inter';
+                ctx.fillText("Simulación: Toca sobre el lago azul o el cerro", 40, 50);
+            }
+
+            // Ocultar video, mostrar canvas
+            videoFeed.classList.add('hidden');
+            photoCanvas.classList.remove('hidden');
+            reticleOverlay.classList.add('hidden');
+            
+            btnCapture.classList.add('hidden');
+            btnReTake.classList.remove('hidden');
+            captureInstruction.classList.remove('hidden');
+
+            // Guardar copia del estado de la imagen
+            capturedImageData = ctx.getImageData(0, 0, photoCanvas.width, photoCanvas.height);
+        }
+
+        btnReTake.addEventListener('click', () => {
+            photoCanvas.classList.add('hidden');
+            videoFeed.classList.remove('hidden');
+            reticleOverlay.classList.remove('hidden');
+            
+            btnCapture.classList.remove('hidden');
+            btnReTake.classList.add('hidden');
+            captureInstruction.classList.add('hidden');
+            markedPixel = null;
+        });
+
+        // --- Touch/Click on Photo to Calculate Vector ---
+        photoCanvas.addEventListener('click', (e) => {
+            const rect = photoCanvas.getBoundingClientRect();
+            const scaleX = photoCanvas.width / rect.width;
+            const scaleY = photoCanvas.height / rect.height;
+
+            const clickX = (e.clientX - rect.left) * scaleX;
+            const clickY = (e.clientY - rect.top) * scaleY;
+
+            markedPixel = { x: clickX, y: clickY };
+
+            // Redibujar imagen original para limpiar marcas anteriores
+            const ctx = photoCanvas.getContext('2d');
+            ctx.putImageData(capturedImageData, 0, 0);
+
+            // Dibujar punto objetivo en el toque
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(clickX, clickY, 16, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.fillStyle = '#ef4444';
+            ctx.beginPath();
+            ctx.arc(clickX, clickY, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Calcular desviación angular horizontal con respecto al centro de la foto
+            const centerX = photoCanvas.width / 2;
+            const pixelOffset = clickX - centerX;
+            const degPerPixel = CAMERA_FOV_H / photoCanvas.width;
+            const horizontalAngleOffset = pixelOffset * degPerPixel;
+
+            // Azimut final apuntado
+            const baseHeading = getActiveHeading();
+            const finalBearing = (baseHeading + horizontalAngleOffset + 360) % 360;
+
+            // Calcular punto final usando distancia estimada
+            const distMeters = parseFloat(estimatedDistInput.value) || 1500;
+            const targetCoords = calculateDestinationPoint(currentPos.lat, currentPos.lng, finalBearing, distMeters);
+
+            currentTarget = {
+                lat: targetCoords.lat,
+                lng: targetCoords.lng,
+                distance: distMeters,
+                bearing: finalBearing,
+                timestamp: new Date().toLocaleTimeString()
+            };
+
+            // Actualizar datos en UI y en el Mapa
+            updateCalculationUI();
+            updateMapTarget();
+            
+            // Cambiar automáticamente a la pestaña del Mapa para ver el resultado
+            switchTab('map');
+        });
+
+        // --- Geodesic Math (Vincenty/Haversine Direct Formula) ---
+        function calculateDestinationPoint(lat, lng, bearing, distanceMeters) {
+            const R = 6371000; // Radio de la Tierra en metros
+            const brng = bearing * Math.PI / 180;
+            const d = distanceMeters;
+            const lat1 = lat * Math.PI / 180;
+            const lon1 = lng * Math.PI / 180;
+
+            const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d / R) +
+                Math.cos(lat1) * Math.sin(d / R) * Math.cos(brng));
+
+            const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(d / R) * Math.cos(lat1),
+                Math.cos(d / R) - Math.sin(lat1) * Math.sin(lat2));
+
+            return {
+                lat: lat2 * 180 / Math.PI,
+                lng: lon2 * 180 / Math.PI
+            };
+        }
+
+        // --- UI Updates ---
+        function updateCalculationUI() {
+            if (!currentTarget) return;
+            document.getElementById('target-bearing').textContent = `Rumbo: ${Math.round(currentTarget.bearing)}°`;
+            document.getElementById('calc-distance').textContent = `${currentTarget.distance >= 1000 ? (currentTarget.distance/1000).toFixed(2) + ' km' : Math.round(currentTarget.distance) + ' m'}`;
+            document.getElementById('calc-coords').textContent = `${currentTarget.lat.toFixed(5)}, ${currentTarget.lng.toFixed(5)}`;
+        }
+
+        // --- Leaflet Map Setup ---
+        function initMap() {
+            map = L.map('map', { zoomControl: false }).setView([currentPos.lat, currentPos.lng], 14);
+
+            // OpenTopoMap tile layer para cerros/relieve
+            L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+                maxZoom: 17,
+                attribution: 'Map data: &copy; OpenStreetMap, SRTM | Map style: &copy; OpenTopoMap'
+            }).addTo(map);
+
+            // Icono de usuario
+            const userIcon = L.divIcon({
+                className: 'custom-user-pin',
+                html: `<div class="w-6 h-6 bg-emerald-500 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-white text-[10px]">
+                        <i class="fa-solid fa-person-walking"></i>
+                       </div>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 12]
+            });
+
+            userMarker = L.marker([currentPos.lat, currentPos.lng], { icon: userIcon }).addTo(map);
+        }
+
+        function updateUserMapPosition() {
+            if (map && userMarker) {
+                userMarker.setLatLng([currentPos.lat, currentPos.lng]);
+            }
+        }
+
+        function updateMapTarget() {
+            if (!map || !currentTarget) return;
+
+            const userLatLng = [currentPos.lat, currentPos.lng];
+            const targetLatLng = [currentTarget.lat, currentTarget.lng];
+
+            // Crear o actualizar marcador de objetivo
+            if (targetMarker) map.removeLayer(targetMarker);
+            if (rayPolyline) map.removeLayer(rayPolyline);
+
+            const targetIcon = L.divIcon({
+                className: 'custom-target-pin',
+                html: `<div class="w-8 h-8 bg-red-600 rounded-full border-2 border-white shadow-xl flex items-center justify-center text-white text-xs animate-bounce">
+                        <i class="fa-solid fa-bullseye"></i>
+                       </div>`,
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+            });
+
+            targetMarker = L.marker(targetLatLng, { icon: targetIcon })
+                .addTo(map)
+                .bindPopup(`<b>Objetivo Calculado</b><br>Rumbo: ${Math.round(currentTarget.bearing)}°<br>Distancia: ${Math.round(currentTarget.distance)}m`)
+                .openPopup();
+
+            // Dibujar línea de dirección / Raycast
+            rayPolyline = L.polyline([userLatLng, targetLatLng], {
+                color: '#10b981',
+                weight: 4,
+                dashArray: '8, 8'
+            }).addTo(map);
+
+            // Ajustar vista del mapa para incluir ambos puntos
+            const bounds = L.latLngBounds([userLatLng, targetLatLng]);
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        // --- Save Waypoint History ---
+        document.getElementById('btn-save-waypoint').addEventListener('click', () => {
+            if (!currentTarget) {
+                alert("Primero debes marcar un punto en la foto.");
+                return;
+            }
+
+            const name = prompt("Nombre para este punto (ej: Lago escondido, Árbol frondoso):", "Objetivo Cerro");
+            if (!name) return;
+
+            const item = {
+                id: Date.now(),
+                name: name,
+                lat: currentTarget.lat,
+                lng: currentTarget.lng,
+                distance: currentTarget.distance,
+                bearing: currentTarget.bearing,
+                date: new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString()
+            };
+
+            let history = JSON.parse(localStorage.getItem('geocerro_history') || '[]');
+            history.unshift(item);
+            localStorage.setItem('geocerro_history', JSON.stringify(history));
+
+            loadSavedWaypoints();
+            alert("¡Punto guardado en el historial offline!");
+        });
+
+        function loadSavedWaypoints() {
+            const historyList = document.getElementById('history-list');
+            const history = JSON.parse(localStorage.getItem('geocerro_history') || '[]');
+
+            if (history.length === 0) {
+                historyList.innerHTML = `<div class="text-center py-10 text-slate-500 text-xs">No hay puntos guardados todavía.</div>`;
+                return;
+            }
+
+            historyList.innerHTML = history.map(item => `
+                <div class="bg-slate-900 border border-slate-800 p-3 rounded-xl flex items-center justify-between">
+                    <div>
+                        <div class="font-bold text-sm text-slate-100">${item.name}</div>
+                        <div class="text-[10px] text-slate-400">${item.date}</div>
+                        <div class="text-xs text-emerald-400 font-mono mt-1">
+                            ${item.lat.toFixed(4)}, ${item.lng.toFixed(4)} | ${Math.round(item.distance)}m | ${Math.round(item.bearing)}°
+                        </div>
+                    </div>
+                    <button onclick="deleteWaypoint(${item.id})" class="text-slate-600 hover:text-red-400 p-2 text-sm">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        window.deleteWaypoint = function(id) {
+            let history = JSON.parse(localStorage.getItem('geocerro_history') || '[]');
+            history = history.filter(item => item.id !== id);
+            localStorage.setItem('geocerro_history', JSON.stringify(history));
+            loadSavedWaypoints();
+        };
+
+        // --- Navigation Tabs Control ---
+        function switchTab(tabName) {
+            [tabCamera, tabMap, tabHistory].forEach(el => {
+                el.classList.add('opacity-0', 'pointer-events-none');
+            });
+
+            [navBtnCamera, navBtnMap, navBtnHistory].forEach(btn => {
+                btn.classList.remove('text-emerald-400');
+                btn.classList.add('text-slate-400');
+            });
+
+            if (tabName === 'camera') {
+                tabCamera.classList.remove('opacity-0', 'pointer-events-none');
+                navBtnCamera.classList.add('text-emerald-400');
+            } else if (tabName === 'map') {
+                tabMap.classList.remove('opacity-0', 'pointer-events-none');
+                navBtnMap.classList.add('text-emerald-400');
+                if (map) setTimeout(() => map.invalidateSize(), 300);
+            } else if (tabName === 'history') {
+                tabHistory.classList.remove('opacity-0', 'pointer-events-none');
+                navBtnHistory.classList.add('text-emerald-400');
+            }
+        }
+
+        navBtnCamera.addEventListener('click', () => switchTab('camera'));
+        navBtnMap.addEventListener('click', () => switchTab('map'));
+        navBtnHistory.addEventListener('click', () => switchTab('history'));
+    </script>
+</body>
+</html>
