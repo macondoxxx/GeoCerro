@@ -216,7 +216,7 @@
 
         .controls-row {
             display: flex;
-            gap: 10px;
+            gap: 8px;
             align-items: center;
         }
 
@@ -414,6 +414,7 @@
         
         <div class="sensor-panel">
             
+            <!-- SOL 3D -->
             <div id="tab-sunrel" class="tab-content active">
                 <div class="sun-ui-grid">
                     <div id="dome-3d-container">
@@ -436,6 +437,7 @@
                 </div>
             </div>
 
+            <!-- BRÚJULA -->
             <div id="tab-compass" class="tab-content">
                 <div class="sensor-grid">
                     <div class="sensor-card">
@@ -453,23 +455,27 @@
                 </div>
             </div>
 
+            <!-- GPS MOVIMIENTO -->
             <div id="tab-gpsmove" class="tab-content">
-                <div class="sensor-card" style="padding: 10px;">
-                    <div class="label" style="margin-bottom: 5px;">Modo Movimiento</div>
-                    <div class="value" id="gps-heading-val" style="font-size:0.8rem; color:var(--warning);">Caminá unos pasos rectos</div>
+                <div class="sensor-card" style="padding: 12px; text-align: center;">
+                    <div class="label" style="margin-bottom: 5px;">Modo Caminata (GPS Heading)</div>
+                    <div class="value" id="gps-heading-val" style="font-size:0.8rem; color:var(--warning); margin-bottom: 8px;">Caminá en línea recta unos 5 metros...</div>
+                    <button class="btn btn-secondary" style="font-size:0.75rem; padding: 6px 10px;" onclick="resetGpsWalk()">Reiniciar Captura de Pasos</button>
                 </div>
             </div>
 
+            <!-- MANUAL (Simplificado e Intuitivo) -->
             <div id="tab-manual" class="tab-content">
+                <div style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 4px;">Seleccioná hacia dónde estás mirando:</div>
+                <div class="controls-row" style="margin-bottom: 6px;">
+                    <button class="btn btn-secondary" style="flex:1" onclick="setQuickNorth(0)">Norte (0°)</button>
+                    <button class="btn btn-secondary" style="flex:1" onclick="setQuickNorth(90)">Este (90°)</button>
+                    <button class="btn btn-secondary" style="flex:1" onclick="setQuickNorth(180)">Sur (180°)</button>
+                    <button class="btn btn-secondary" style="flex:1" onclick="setQuickNorth(270)">Oeste (270°)</button>
+                </div>
                 <div class="controls-row">
-                    <div class="input-group">
-                        <label>Azimut (0° - 360°)</label>
-                        <input type="number" id="manual-azimuth" value="0" min="0" max="360" oninput="updateAzimuth(this.value)">
-                    </div>
-                    <button class="btn btn-secondary" onclick="setQuickNorth(0)">N</button>
-                    <button class="btn btn-secondary" onclick="setQuickNorth(90)">E</button>
-                    <button class="btn btn-secondary" onclick="setQuickNorth(180)">S</button>
-                    <button class="btn btn-secondary" onclick="setQuickNorth(270)">O</button>
+                    <button class="btn btn-warning" style="flex:1" onclick="adjustManualAzimuth(-15)">⬅️ Girar 15° Izq</button>
+                    <button class="btn btn-warning" style="flex:1" onclick="adjustManualAzimuth(15)">Girar 15° Der ➡️</button>
                 </div>
             </div>
 
@@ -546,6 +552,9 @@
         let relativeSunAngle = 270;
         let isPhotoTaken = false;
 
+        // Variables para GPS Movimiento (Caminata)
+        let lastWalkPos = null;
+
         let scene, camera, renderer, sunMesh, sunGroup;
         let isDragging = false;
         let previousMouseX = 0;
@@ -581,10 +590,16 @@
             } else if (tabId === 'gpsmove') {
                 document.querySelectorAll('.tab-btn')[2].classList.add('active');
                 document.getElementById('tab-gpsmove').classList.add('active');
+                lastWalkPos = null; // Reiniciar referencia de caminata
+                document.getElementById('gps-heading-val').innerText = "Caminá en línea recta unos 5 metros...";
             } else if (tabId === 'manual') {
                 document.querySelectorAll('.tab-btn')[3].classList.add('active');
                 document.getElementById('tab-manual').classList.add('active');
             }
+
+            setTimeout(() => {
+                if (map) map.invalidateSize();
+            }, 100);
         }
 
         function initMap() {
@@ -596,10 +611,14 @@
 
             userMarker = L.marker([userCoords.lat, userCoords.lng]).addTo(map)
                 .bindPopup("<b>Tu Posición</b>").openPopup();
+
+            setTimeout(() => { map.invalidateSize(); }, 200);
         }
 
         function updateMap() {
             if (!map || !userCoords) return;
+            map.invalidateSize();
+
             const userLatLng = [userCoords.lat, userCoords.lng];
             userMarker.setLatLng(userLatLng);
 
@@ -619,7 +638,7 @@
                         popupAnchor: [1, -34],
                         shadowSize: [41, 41]
                     })
-                }).addTo(map).bindPopup("<b>Objetivo</b>");
+                }).addTo(map).bindPopup("<b>Objetivo Seleccionado</b>");
             }
 
             if (sightLine) {
@@ -639,9 +658,37 @@
             if (!navigator.geolocation) return;
             navigator.geolocation.watchPosition(
                 (pos) => {
-                    userCoords.lat = pos.coords.latitude;
-                    userCoords.lng = pos.coords.longitude;
-                    userCoords.alt = pos.coords.altitude || 1100;
+                    const newLat = pos.coords.latitude;
+                    const newLng = pos.coords.longitude;
+                    const newAlt = pos.coords.altitude || 1100;
+
+                    // Lógica para Modo Caminata (GPS Move)
+                    if (activeTab === 'gpsmove') {
+                        if (lastWalkPos) {
+                            const dLat = newLat - lastWalkPos.lat;
+                            const dLng = newLng - lastWalkPos.lng;
+                            const distanceMoved = Math.sqrt(dLat*dLat + dLng*dLng) * 111000; // Metros aprox
+                            
+                            if (distanceMoved > 3) { // Si se movió al menos 3 metros
+                                let walkHeading = Math.atan2(Math.sin(dLng * Math.PI / 180) * Math.cos(newLat * Math.PI / 180),
+                                    Math.cos(lastWalkPos.lat * Math.PI / 180) * Math.sin(newLat * Math.PI / 180) -
+                                    Math.sin(lastWalkPos.lat * Math.PI / 180) * Math.cos(newLat * Math.PI / 180) * Math.cos(dLng * Math.PI / 180)) * 180 / Math.PI;
+                                
+                                walkHeading = (walkHeading + 360) % 360;
+                                updateAzimuth(Math.round(walkHeading));
+                                document.getElementById('gps-heading-val').innerText = `¡Rumbo detectado: ${Math.round(walkHeading)}°!`;
+                                showToast(`Rumbo por caminata: ${Math.round(walkHeading)}°`);
+                                lastWalkPos = { lat: newLat, lng: newLng };
+                            }
+                        } else {
+                            lastWalkPos = { lat: newLat, lng: newLng };
+                            document.getElementById('gps-heading-val').innerText = "Registrando posición inicial... ¡Caminá derecho!";
+                        }
+                    }
+
+                    userCoords.lat = newLat;
+                    userCoords.lng = newLng;
+                    userCoords.alt = newAlt;
 
                     document.getElementById('gps-status').innerText = 'GPS OK';
                     document.getElementById('gps-status').classList.add('active');
@@ -652,8 +699,14 @@
                     updateMap();
                 },
                 (err) => { document.getElementById('gps-status').innerText = 'Sin GPS'; },
-                { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
+                { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
             );
+        }
+
+        function resetGpsWalk() {
+            lastWalkPos = null;
+            document.getElementById('gps-heading-val').innerText = "Caminá en línea recta unos 5 metros...";
+            showToast("Buscando nuevo rumbo por caminata...");
         }
 
         function initCompass() {
@@ -675,7 +728,15 @@
             updateMap();
         }
 
-        function setQuickNorth(deg) { updateAzimuth(deg); }
+        function setQuickNorth(deg) { 
+            updateAzimuth(deg); 
+            showToast(`Orientación manual: ${deg}° (${getCardinal(deg)})`);
+        }
+
+        function adjustManualAzimuth(delta) {
+            updateAzimuth(currentAzimuth + delta);
+            showToast(`Azimut ajustado a ${Math.round(currentAzimuth)}°`);
+        }
 
         function getCardinal(deg) {
             const directions = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
@@ -708,7 +769,7 @@
             showToast(`Norte calculado. Mirada a ${Math.round(calculatedAzimuth)}°`);
         }
 
-        // --- ESCENA 3D CON FLECHA 3D REDONDEADA, CORTA Y ESTILIZADA ---
+        // --- ESCENA 3D CON FLECHA REDONDEADA Y ESTILIZADA ---
         function init3DScene() {
             const container = document.getElementById('dome-3d-container');
             const canvas = document.getElementById('dome-canvas');
@@ -725,41 +786,38 @@
             const domeMat = new THREE.MeshBasicMaterial({ color: 0x34495e, wireframe: true, transparent: true, opacity: 0.3 });
             scene.add(new THREE.Mesh(domeGeo, domeMat));
 
-            // Silueta exacta de flecha ancha, gordita y corta con bordes estilizados
             const arrowShape = new THREE.Shape();
-            arrowShape.moveTo(-0.2,  0.3);   // Base izquierda
-            arrowShape.lineTo( 0.2,  0.3);   // Base derecha
-            arrowShape.lineTo( 0.2, -0.05);  // Cuerpo derecho
-            arrowShape.lineTo( 0.45, -0.05); // Ala derecha de la punta
-            arrowShape.lineTo( 0.0, -0.5);   // Punta frontal
-            arrowShape.lineTo(-0.45, -0.05); // Ala izquierda de la punta
-            arrowShape.lineTo(-0.2, -0.05);  // Cuerpo izquierdo
+            arrowShape.moveTo(-0.2,  0.3);
+            arrowShape.lineTo( 0.2,  0.3);
+            arrowShape.lineTo( 0.2, -0.05);
+            arrowShape.lineTo( 0.45, -0.05);
+            arrowShape.lineTo( 0.0, -0.5);
+            arrowShape.lineTo(-0.45, -0.05);
+            arrowShape.lineTo(-0.2, -0.05);
             arrowShape.closePath();
 
-            // Extrusión con bisel redondeado pronunciado para darle el aspecto suave y 3D de emoji/botón
             const extrudeSettings = {
                 steps: 1,
-                depth: 0.12,          // Perfil bajito
+                depth: 0.12,
                 bevelEnabled: true,
-                bevelThickness: 0.06, // Bordes abombados suaves
+                bevelThickness: 0.06,
                 bevelSize: 0.05,
-                bevelSegments: 5      // Máxima suavidad redondeada
+                bevelSegments: 5
             };
 
             const geometry = new THREE.ExtrudeGeometry(arrowShape, extrudeSettings);
-            geometry.rotateX(Math.PI / 2); // Acostarla sobre el piso
+            geometry.rotateX(Math.PI / 2);
             geometry.center();
 
             const material = new THREE.MeshStandardMaterial({ 
                 color: 0xf39c12, 
-                roughness: 0.3,  // Aspecto semi-brillante / satinado
+                roughness: 0.3, 
                 metalness: 0.1 
             });
             const smoothArrow = new THREE.Mesh(geometry, material);
             smoothArrow.position.set(0, 0.06, 0);
             scene.add(smoothArrow);
 
-            // Grupo del Sol que rota alrededor tuyo
             sunGroup = new THREE.Group();
             const sunGeo = new THREE.SphereGeometry(0.18, 16, 16);
             sunMesh = new THREE.Mesh(sunGeo, new THREE.MeshBasicMaterial({ color: 0xf1c40f }));
@@ -769,7 +827,6 @@
 
             updateSunRotation(270);
 
-            // Luces para resaltar el relieve y los bordes redondeados
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
             scene.add(ambientLight);
             const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
@@ -824,6 +881,7 @@
             camera.aspect = container.clientWidth / container.clientHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(container.clientWidth, container.clientHeight);
+            if (map) map.invalidateSize();
         }
 
         function initRadar2D() {
