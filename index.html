@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GeoCerro 3D - Cúpula Táctil</title>
+    <title>GeoCerro 3D - Brújula Solar Relativa</title>
     
     <meta name="theme-color" content="#2c3e50">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -130,7 +130,7 @@
 
         #dome-3d-container {
             width: 100%;
-            height: 180px;
+            height: 190px;
             background-color: #0d131a;
             border-radius: 8px;
             position: relative;
@@ -149,11 +149,12 @@
             top: 5px;
             left: 8px;
             font-size: 0.65rem;
-            background: rgba(0,0,0,0.7);
+            background: rgba(0,0,0,0.75);
             padding: 4px 8px;
             border-radius: 4px;
             pointer-events: none;
-            color: var(--text-muted);
+            color: var(--text-light);
+            line-height: 1.3;
         }
 
         .sensor-grid {
@@ -351,12 +352,12 @@
 <body>
 
     <header>
-        <h1>⛰️ GeoCerro 3D Táctil</h1>
+        <h1>⛰️ GeoCerro 3D - Sol Relativo</h1>
         <div id="gps-status" class="status-badge">Buscando GPS...</div>
     </header>
 
     <div class="mode-tabs">
-        <button class="tab-btn active" onclick="switchTab('touch3d')">👆 Cúpula Táctil</button>
+        <button class="tab-btn active" onclick="switchTab('sunrel')">☀️ Ubicar Sol 3D</button>
         <button class="tab-btn" onclick="switchTab('compass')">🧭 Auto Brújula</button>
         <button class="tab-btn" onclick="switchTab('gpsmove')">🚶 Rumbo GPS</button>
         <button class="tab-btn" onclick="switchTab('manual')">🎛️ Manual</button>
@@ -366,18 +367,19 @@
         
         <div class="sensor-panel">
             
-            <!-- PESTAÑA 1: CÚPULA TÁCTIL 3D -->
-            <div id="tab-touch3d" class="tab-content active">
+            <!-- PESTAÑA 1: SOL EN CÚPULA RELATIVA -->
+            <div id="tab-sunrel" class="tab-content active">
                 <div id="dome-3d-container">
                     <canvas id="dome-canvas"></canvas>
                     <div class="dome-overlay-info">
-                        👉 <b>Arrastrá con el dedo</b> para girar la flecha hacia donde mirás<br>
-                        Azimut Actual: <span id="touch-azimuth-val" style="color:var(--accent)">0° (N)</span>
+                        📍 <b>Mirada Fija:</b> Apuntando al Objetivo (Flecha Naranja)<br>
+                        👉 <b>Arrastrá el Sol con el dedo</b> hasta donde lo ves en el cielo.<br>
+                        Sol Relativo a ti: <span id="relative-sun-val" style="color:var(--warning)">90° (a tu derecha)</span>
                     </div>
                 </div>
                 <div class="controls-row">
-                    <button class="btn btn-warning" style="flex:1" onclick="applyTouchOrientation()">
-                        ✅ Fijar Orientación con este Giro
+                    <button class="btn btn-warning" style="flex:1" onclick="calculateNorthFromSun()">
+                        ☀️ Calcular Norte según Ubicación del Sol
                     </button>
                 </div>
             </div>
@@ -404,7 +406,7 @@
             <div id="tab-gpsmove" class="tab-content">
                 <div class="sensor-card" style="padding: 10px;">
                     <div class="label" style="margin-bottom: 5px;">Modo Movimiento</div>
-                    <div class="value" id="gps-heading-val" style="font-size:0.8rem; color:var(--warning);">Caminá unos pasos rectos para calcular rumbo</div>
+                    <div class="value" id="gps-heading-val" style="font-size:0.8rem; color:var(--warning);">Caminá unos pasos rectos hacia el objetivo para calcular rumbo</div>
                 </div>
             </div>
 
@@ -481,23 +483,24 @@
         let currentAzimuth = 0;
         let userCoords = { lat: -24.7859, lng: -65.4117, alt: 1187 };
         let targetCoords = null;
-        let activeTab = 'touch3d';
+        let activeTab = 'sunrel';
         
         let map, userMarker, targetMarker, sightLine;
         let videoStream = null;
-        let lastPositionForHeading = null;
+        let absoluteSunAzimuth = 0; // Calculado astronómicamente por GPS y hora
+        let relativeSunAngle = 90; // Ángulo del sol respecto a mi mirada (0° frente, 90° derecha, 180° atrás, 270° izquierda)
 
         // Three.js Variables
-        let scene, camera, renderer, arrowGroup, sunMesh;
+        let scene, camera, renderer, sunMesh, sunGroup;
         let isDragging = false;
-        let previousMousePosition = { x: 0, y: 0 };
-        let domeRotationY = 0;
+        let previousMouseX = 0;
 
         window.addEventListener('DOMContentLoaded', () => {
             initMap();
             initGPS();
             initCompass();
             init3DScene();
+            calculateAbsoluteSunPosition();
             window.addEventListener('resize', onWindowResize);
         });
 
@@ -513,9 +516,9 @@
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
-            if (tabId === 'touch3d') {
+            if (tabId === 'sunrel') {
                 document.querySelectorAll('.tab-btn')[0].classList.add('active');
-                document.getElementById('tab-touch3d').classList.add('active');
+                document.getElementById('tab-sunrel').classList.add('active');
             } else if (tabId === 'compass') {
                 document.querySelectorAll('.tab-btn')[1].classList.add('active');
                 document.getElementById('tab-compass').classList.add('active');
@@ -588,6 +591,8 @@
                     document.getElementById('gps-status').classList.add('active');
                     document.getElementById('coords-val').innerText = `${userCoords.lat.toFixed(4)}, ${userCoords.lng.toFixed(4)}`;
                     document.getElementById('alt-val').innerText = `${Math.round(userCoords.alt)} m`;
+
+                    calculateAbsoluteSunPosition();
                     updateMap();
                 },
                 (err) => { document.getElementById('gps-status').innerText = 'Sin GPS'; },
@@ -621,7 +626,35 @@
             return directions[Math.round(deg / 45) % 8];
         }
 
-        // --- ESCENA 3D TÁCTIL ---
+        // --- ASTRONOMÍA: POSICIÓN ABSOLUTA DEL SOL ---
+        function calculateAbsoluteSunPosition() {
+            const now = new Date();
+            const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24));
+            const declination = 23.45 * Math.sin((284 + dayOfYear) * Math.PI / 180);
+            const hours = now.getHours() + now.getMinutes() / 60;
+            const hourAngle = (hours - 12) * 15;
+
+            const latRad = userCoords.lat * Math.PI / 180;
+            const decRad = declination * Math.PI / 180;
+            const hourRad = hourAngle * Math.PI / 180;
+
+            const sinAlt = Math.sin(latRad) * Math.sin(decRad) + Math.cos(latRad) * Math.cos(decRad) * Math.cos(hourRad);
+            const cosAz = (Math.sin(decRad) - Math.sin(latRad) * sinAlt) / (Math.cos(latRad) * Math.cos(Math.asin(sinAlt)));
+            
+            let az = Math.acos(Math.min(Math.max(cosAz, -1), 1)) * 180 / Math.PI;
+            if (hourAngle > 0) az = 360 - az;
+
+            absoluteSunAzimuth = Math.round(az);
+        }
+
+        function calculateNorthFromSun() {
+            // Tu dirección = Azimut real del Sol - Ángulo relativo del Sol
+            let calculatedAzimuth = (absoluteSunAzimuth - relativeSunAngle + 360) % 360;
+            updateAzimuth(Math.round(calculatedAzimuth));
+            showToast(`Norte calculado. Tu mirada apunta a ${Math.round(calculatedAzimuth)}°`);
+        }
+
+        // --- ESCENA 3D CON FLECHA FIJA Y SOL MOVIBLE ---
         function init3DScene() {
             const container = document.getElementById('dome-3d-container');
             const canvas = document.getElementById('dome-canvas');
@@ -639,47 +672,49 @@
             const domeMat = new THREE.MeshBasicMaterial({ color: 0x34495e, wireframe: true, transparent: true, opacity: 0.3 });
             scene.add(new THREE.Mesh(domeGeo, domeMat));
 
-            // Grupo rotable con el dedo (Flecha de dirección)
-            arrowGroup = new THREE.Group();
-            const arrowGeo = new THREE.ConeGeometry(0.1, 0.5, 8);
+            // Flecha Fija en el Centro apuntando al frente (Tu Mirada al Objetivo)
+            const arrowGeo = new THREE.ConeGeometry(0.12, 0.6, 8);
             arrowGeo.rotateX(Math.PI / 2);
-            const arrowMat = new THREE.MeshBasicMaterial({ color: 0xe67e22 });
-            const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
-            arrowMesh.position.set(0, 0, -1.2);
-            arrowGroup.add(arrowMesh);
+            const arrowMesh = new THREE.Mesh(arrowGeo, new THREE.MeshBasicMaterial({ color: 0xe67e22 }));
+            arrowMesh.position.set(0, 0, -1.0);
+            scene.add(arrowMesh);
 
-            // Centro (Punto naranja Yo)
-            const centerGeo = new THREE.SphereGeometry(0.12, 16, 16);
-            const centerMat = new THREE.MeshBasicMaterial({ color: 0xe67e22 });
-            arrowGroup.add(new THREE.Mesh(centerGeo, centerMat));
-            scene.add(arrowGroup);
+            // Punto central "Yo"
+            const centerMesh = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), new THREE.MeshBasicMaterial({ color: 0xe67e22 }));
+            scene.add(centerMesh);
 
-            // Sol referencial en el domo
-            const sunGeo = new THREE.SphereGeometry(0.15, 16, 16);
+            // Grupo del Sol que rota alrededor tuyo
+            sunGroup = new THREE.Group();
+            const sunGeo = new THREE.SphereGeometry(0.18, 16, 16);
             sunMesh = new THREE.Mesh(sunGeo, new THREE.MeshBasicMaterial({ color: 0xf1c40f }));
-            sunMesh.position.set(1.2, 1.2, -1.0);
-            scene.add(sunMesh);
+            sunMesh.position.set(0, 1.2, -1.6); // Posición inicial
+            sunGroup.add(sunMesh);
+            scene.add(sunGroup);
 
             scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 
-            // Eventos táctiles para arrastrar con el dedo
+            // Eventos táctiles para mover EL SOL alrededor tuyo
             container.addEventListener('pointerdown', (e) => {
                 isDragging = true;
-                previousMousePosition = { x: e.clientX, y: e.clientY };
+                previousMouseX = e.clientX;
             });
 
             container.addEventListener('pointermove', (e) => {
                 if (!isDragging) return;
-                const deltaX = e.clientX - previousMousePosition.x;
-                domeRotationY += deltaX * 0.01;
-                arrowGroup.rotation.y = domeRotationY;
+                const deltaX = e.clientX - previousMouseX;
+                
+                relativeSunAngle = (relativeSunAngle + deltaX * 0.5 + 360) % 360;
+                sunGroup.rotation.y = -relativeSunAngle * Math.PI / 180;
 
-                // Calcular grados según rotación
-                let deg = (-domeRotationY * 180 / Math.PI) % 360;
-                if (deg < 0) deg += 360;
-                document.getElementById('touch-azimuth-val').innerText = `${Math.round(deg)}° (${getCardinal(deg)})`;
+                // Texto explicativo del Sol
+                let sideText = "";
+                if (relativeSunAngle >= 337.5 || relativeSunAngle < 22.5) sideText = "Al Frente";
+                else if (relativeSunAngle >= 22.5 && relativeSunAngle < 157.5) sideText = "a tu Derecha";
+                else if (relativeSunAngle >= 157.5 && relativeSunAngle < 202.5) sideText = "Atrás tuyo";
+                else sideText = "a tu Izquierda";
 
-                previousMousePosition = { x: e.clientX, y: e.clientY };
+                document.getElementById('relative-sun-val').innerText = `${Math.round(relativeSunAngle)}° (${sideText})`;
+                previousMouseX = e.clientX;
             });
 
             window.addEventListener('pointerup', () => { isDragging = false; });
@@ -689,13 +724,6 @@
         function animate3D() {
             requestAnimationFrame(animate3D);
             renderer.render(scene, camera);
-        }
-
-        function applyTouchOrientation() {
-            let deg = (-domeRotationY * 180 / Math.PI) % 360;
-            if (deg < 0) deg += 360;
-            updateAzimuth(Math.round(deg));
-            showToast(`Orientación fijada a ${Math.round(deg)}°`);
         }
 
         function onWindowResize() {
