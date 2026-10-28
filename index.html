@@ -3,17 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>GeoCerro 3D - Visor de Perspectiva y Distancia</title>
+    <title>GeoCerro 3D - Cúpula Táctil</title>
     
-    <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#2c3e50">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="https://leafletjs.com/examples/custom-icons/leaf-green.png">
 
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <!-- Three.js (Librería 3D para la Cúpula Celeste) -->
+    <!-- Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
     <style>
@@ -76,7 +74,6 @@
             font-weight: bold;
         }
 
-        /* Modos de alineación (Tabs) */
         .mode-tabs {
             display: flex;
             background-color: #17202a;
@@ -113,7 +110,6 @@
             position: relative;
         }
 
-        /* Panel de alineación / Sensores */
         .sensor-panel {
             background-color: var(--bg-card);
             padding: 10px 15px;
@@ -132,15 +128,15 @@
             gap: 8px;
         }
 
-        /* Contenedor 3D para el Sol */
         #dome-3d-container {
             width: 100%;
-            height: 150px;
+            height: 180px;
             background-color: #0d131a;
             border-radius: 8px;
             position: relative;
             overflow: hidden;
             border: 1px solid #34495e;
+            touch-action: none;
         }
 
         #dome-canvas {
@@ -153,10 +149,11 @@
             top: 5px;
             left: 8px;
             font-size: 0.65rem;
-            background: rgba(0,0,0,0.6);
-            padding: 3px 6px;
+            background: rgba(0,0,0,0.7);
+            padding: 4px 8px;
             border-radius: 4px;
             pointer-events: none;
+            color: var(--text-muted);
         }
 
         .sensor-grid {
@@ -186,7 +183,6 @@
             color: var(--text-light);
         }
 
-        /* Controles de Entrada */
         .controls-row {
             display: flex;
             gap: 10px;
@@ -227,7 +223,6 @@
             align-items: center;
             justify-content: center;
             gap: 6px;
-            transition: background 0.2s;
         }
 
         .btn:active {
@@ -243,7 +238,6 @@
             color: #111;
         }
 
-        /* Sección de Cámara */
         .camera-section {
             position: relative;
             background-color: #000;
@@ -320,7 +314,6 @@
             box-shadow: 0 0 8px var(--accent);
         }
 
-        /* Sección de Mapa */
         .map-section {
             height: 220px;
             width: 100%;
@@ -333,7 +326,6 @@
             height: 100%;
         }
 
-        /* Toast / Notificaciones */
         .toast {
             position: fixed;
             bottom: 20px;
@@ -359,13 +351,12 @@
 <body>
 
     <header>
-        <h1>⛰️ GeoCerro 3D</h1>
+        <h1>⛰️ GeoCerro 3D Táctil</h1>
         <div id="gps-status" class="status-badge">Buscando GPS...</div>
     </header>
 
-    <!-- Selector de Métodos / Pestañas (Las 4 opciones) -->
     <div class="mode-tabs">
-        <button class="tab-btn active" onclick="switchTab('sun3d')">☀️ Sol 3D</button>
+        <button class="tab-btn active" onclick="switchTab('touch3d')">👆 Cúpula Táctil</button>
         <button class="tab-btn" onclick="switchTab('compass')">🧭 Auto Brújula</button>
         <button class="tab-btn" onclick="switchTab('gpsmove')">🚶 Rumbo GPS</button>
         <button class="tab-btn" onclick="switchTab('manual')">🎛️ Manual</button>
@@ -373,20 +364,20 @@
 
     <div class="main-container">
         
-        <!-- Panel de Control y Sensores -->
         <div class="sensor-panel">
             
-            <!-- PESTAÑA 1: HEMISFERA 3D DEL SOL -->
-            <div id="tab-sun3d" class="tab-content active">
+            <!-- PESTAÑA 1: CÚPULA TÁCTIL 3D -->
+            <div id="tab-touch3d" class="tab-content active">
                 <div id="dome-3d-container">
                     <canvas id="dome-canvas"></canvas>
                     <div class="dome-overlay-info">
-                        Sol: <span id="sun-calc-pos" style="color:var(--warning)">--°</span> | Inclinación: <span id="phone-pitch">0°</span>
+                        👉 <b>Arrastrá con el dedo</b> para girar la flecha hacia donde mirás<br>
+                        Azimut Actual: <span id="touch-azimuth-val" style="color:var(--accent)">0° (N)</span>
                     </div>
                 </div>
                 <div class="controls-row">
-                    <button class="btn btn-warning" style="flex:1" onclick="alignWithSun3D()">
-                        ☀️ Apuntar al Sol y Fijar Norte
+                    <button class="btn btn-warning" style="flex:1" onclick="applyTouchOrientation()">
+                        ✅ Fijar Orientación con este Giro
                     </button>
                 </div>
             </div>
@@ -409,29 +400,28 @@
                 </div>
             </div>
 
-            <!-- PESTAÑA 3: RUMBO GPS (EN MOVIMIENTO) -->
+            <!-- PESTAÑA 3: RUMBO GPS -->
             <div id="tab-gpsmove" class="tab-content">
                 <div class="sensor-card" style="padding: 10px;">
                     <div class="label" style="margin-bottom: 5px;">Modo Movimiento</div>
-                    <div class="value" id="gps-heading-val" style="font-size:0.8rem; color:var(--warning);">Caminá unos pasos rectos para calcular rumbo por desplazamiento</div>
+                    <div class="value" id="gps-heading-val" style="font-size:0.8rem; color:var(--warning);">Caminá unos pasos rectos para calcular rumbo</div>
                 </div>
             </div>
 
-            <!-- PESTAÑA 4: ALINEACIÓN MANUAL (EL DESLIZADOR / NÚMERO) -->
+            <!-- PESTAÑA 4: MANUAL -->
             <div id="tab-manual" class="tab-content">
                 <div class="controls-row">
                     <div class="input-group">
-                        <label>Ajustar Azimut Manual (0° - 360°)</label>
+                        <label>Azimut Manual (0° - 360°)</label>
                         <input type="number" id="manual-azimuth" value="0" min="0" max="360" oninput="updateAzimuth(this.value)">
                     </div>
-                    <button class="btn btn-secondary" onclick="setQuickNorth(0)">N (0°)</button>
-                    <button class="btn btn-secondary" onclick="setQuickNorth(90)">E (90°)</button>
-                    <button class="btn btn-secondary" onclick="setQuickNorth(180)">S (180°)</button>
-                    <button class="btn btn-secondary" onclick="setQuickNorth(270)">O (270°)</button>
+                    <button class="btn btn-secondary" onclick="setQuickNorth(0)">N</button>
+                    <button class="btn btn-secondary" onclick="setQuickNorth(90)">E</button>
+                    <button class="btn btn-secondary" onclick="setQuickNorth(180)">S</button>
+                    <button class="btn btn-secondary" onclick="setQuickNorth(270)">O</button>
                 </div>
             </div>
 
-            <!-- Parámetros Comunes -->
             <div class="sensor-grid">
                 <div class="sensor-card">
                     <div class="label">Azimut Activo</div>
@@ -460,10 +450,9 @@
 
         </div>
 
-        <!-- Visor de Cámara y Foto -->
         <div class="camera-section">
             <video id="camera-feed" autoplay playsinline muted></video>
-            <img id="captured-image" alt="Captura de cerro" onclick="markTargetOnImage(event)">
+            <img id="captured-image" alt="Captura" onclick="markTargetOnImage(event)">
             
             <div class="reticle-overlay" id="camera-reticle">
                 <div class="crosshair"></div>
@@ -474,46 +463,41 @@
         </div>
 
         <div style="padding: 8px 15px; background: #17202a; display: flex; gap: 8px;">
-            <button class="btn btn-secondary" style="flex:1" onclick="toggleCamera()">📷 Abrir / Cambiar Cámara</button>
-            <button class="btn" style="flex:1" onclick="capturePhoto()">📸 Tomar Captura</button>
+            <button class="btn btn-secondary" style="flex:1" onclick="toggleCamera()">📷 Cámara</button>
+            <button class="btn" style="flex:1" onclick="capturePhoto()">📸 Capturar</button>
         </div>
 
-        <!-- Mapa Leaflet -->
         <div class="map-section">
             <div id="map"></div>
         </div>
 
     </div>
 
-    <div id="toast" class="toast">Mensaje de notificación</div>
+    <div id="toast" class="toast">Mensaje</div>
 
-    <!-- Leaflet JS -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
     <script>
-        // --- ESTADO GLOBAL ---
         let currentAzimuth = 0;
-        let currentPitch = 0;
-        let userCoords = { lat: -24.7859, lng: -65.4117, alt: 1187 }; // Default Salta, Arg
+        let userCoords = { lat: -24.7859, lng: -65.4117, alt: 1187 };
         let targetCoords = null;
-        let activeTab = 'sun3d';
+        let activeTab = 'touch3d';
         
         let map, userMarker, targetMarker, sightLine;
         let videoStream = null;
-        let sunAzimuth = 0;
-        let sunAltitude = 0;
         let lastPositionForHeading = null;
 
-        // Three.js 3D Variables
-        let scene, camera, renderer, sunMesh, phoneArrowMesh;
+        // Three.js Variables
+        let scene, camera, renderer, arrowGroup, sunMesh;
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let domeRotationY = 0;
 
-        // --- INICIALIZACIÓN ---
         window.addEventListener('DOMContentLoaded', () => {
             initMap();
             initGPS();
             initCompass();
             init3DScene();
-            calculateSunPosition();
             window.addEventListener('resize', onWindowResize);
         });
 
@@ -524,15 +508,14 @@
             setTimeout(() => toast.classList.remove('show'), 3000);
         }
 
-        // --- GESTIÓN DE PESTAÑAS ---
         function switchTab(tabId) {
             activeTab = tabId;
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
 
-            if (tabId === 'sun3d') {
+            if (tabId === 'touch3d') {
                 document.querySelectorAll('.tab-btn')[0].classList.add('active');
-                document.getElementById('tab-sun3d').classList.add('active');
+                document.getElementById('tab-touch3d').classList.add('active');
             } else if (tabId === 'compass') {
                 document.querySelectorAll('.tab-btn')[1].classList.add('active');
                 document.getElementById('tab-compass').classList.add('active');
@@ -545,13 +528,11 @@
             }
         }
 
-        // --- MAPA LEAFLET ---
         function initMap() {
             map = L.map('map').setView([userCoords.lat, userCoords.lng], 13);
-
             L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
                 maxZoom: 17,
-                attribution: 'Map data: &copy; OpenStreetMap, SRTM | Map style: &copy; OpenTopoMap'
+                attribution: 'OpenTopoMap'
             }).addTo(map);
 
             userMarker = L.marker([userCoords.lat, userCoords.lng]).addTo(map)
@@ -560,13 +541,11 @@
 
         function updateMap() {
             if (!map || !userCoords) return;
-
             const userLatLng = [userCoords.lat, userCoords.lng];
             userMarker.setLatLng(userLatLng);
 
             const distMeters = parseFloat(document.getElementById('est-distance').value) || 1500;
             targetCoords = calculateDestinationPoint(userCoords.lat, userCoords.lng, currentAzimuth, distMeters);
-
             const targetLatLng = [targetCoords.lat, targetCoords.lng];
 
             if (targetMarker) {
@@ -581,7 +560,7 @@
                         popupAnchor: [1, -34],
                         shadowSize: [41, 41]
                     })
-                }).addTo(map).bindPopup("<b>Objetivo Calculado</b>");
+                }).addTo(map).bindPopup("<b>Objetivo</b>");
             }
 
             if (sightLine) {
@@ -594,67 +573,32 @@
                 }).addTo(map);
             }
 
-            const bounds = L.latLngBounds([userLatLng, targetLatLng]);
-            map.fitBounds(bounds, { padding: [30, 30] });
+            map.fitBounds(L.latLngBounds([userLatLng, targetLatLng]), { padding: [30, 30] });
         }
 
-        // --- GPS Y NAVEGACIÓN ---
         function initGPS() {
-            if (!navigator.geolocation) {
-                document.getElementById('gps-status').innerText = 'Sin GPS';
-                return;
-            }
-
+            if (!navigator.geolocation) return;
             navigator.geolocation.watchPosition(
                 (pos) => {
-                    const newLat = pos.coords.latitude;
-                    const newLng = pos.coords.longitude;
-
-                    // Cálculo de rumbo en movimiento (GPS Heading)
-                    if (lastPositionForHeading && activeTab === 'gpsmove') {
-                        const dLat = newLat - lastPositionForHeading.lat;
-                        const dLng = newLng - lastPositionForHeading.lng;
-                        if (Math.abs(dLat) > 0.00001 || Math.abs(dLng) > 0.00001) {
-                            let heading = Math.atan2(dLng, dLat) * 180 / Math.PI;
-                            heading = (heading + 360) % 360;
-                            updateAzimuth(Math.round(heading));
-                            document.getElementById('gps-heading-val').innerText = `Rumbo en movimiento detectado: ${Math.round(heading)}°`;
-                        }
-                    }
-                    lastPositionForHeading = { lat: newLat, lng: newLng };
-
-                    userCoords.lat = newLat;
-                    userCoords.lng = newLng;
+                    userCoords.lat = pos.coords.latitude;
+                    userCoords.lng = pos.coords.longitude;
                     userCoords.alt = pos.coords.altitude || 1100;
 
                     document.getElementById('gps-status').innerText = 'GPS OK';
                     document.getElementById('gps-status').classList.add('active');
                     document.getElementById('coords-val').innerText = `${userCoords.lat.toFixed(4)}, ${userCoords.lng.toFixed(4)}`;
                     document.getElementById('alt-val').innerText = `${Math.round(userCoords.alt)} m`;
-
-                    calculateSunPosition();
                     updateMap();
                 },
-                (err) => {
-                    document.getElementById('gps-status').innerText = 'Error GPS';
-                    showToast("Atención: Usando ubicación estimada");
-                },
+                (err) => { document.getElementById('gps-status').innerText = 'Sin GPS'; },
                 { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
             );
         }
 
-        // --- BRÚJULA Y GIROSCOPIO ---
         function initCompass() {
             if (window.DeviceOrientationEvent) {
                 window.addEventListener('deviceorientation', (e) => {
-                    let heading = e.alpha;
-                    if (e.webkitCompassHeading) {
-                        heading = e.webkitCompassHeading; // iOS
-                    }
-                    
-                    currentPitch = Math.round(e.beta || 0);
-                    document.getElementById('phone-pitch').innerText = `${currentPitch}°`;
-
+                    let heading = e.webkitCompassHeading || e.alpha;
                     if (heading !== null && activeTab === 'compass') {
                         updateAzimuth(Math.round(heading));
                         document.getElementById('compass-val').innerText = `${Math.round(heading)}°`;
@@ -667,107 +611,91 @@
         function updateAzimuth(val) {
             currentAzimuth = (parseFloat(val) + 360) % 360;
             document.getElementById('active-azimuth').innerText = `${Math.round(currentAzimuth)}° (${getCardinal(currentAzimuth)})`;
-            
-            // Sincronizar input manual si está visible
-            const manualInput = document.getElementById('manual-azimuth');
-            if (manualInput && document.activeElement !== manualInput) {
-                manualInput.value = Math.round(currentAzimuth);
-            }
-
             updateMap();
         }
 
-        function setQuickNorth(deg) {
-            updateAzimuth(deg);
-        }
+        function setQuickNorth(deg) { updateAzimuth(deg); }
 
         function getCardinal(deg) {
             const directions = ['N', 'NE', 'E', 'SE', 'S', 'SO', 'O', 'NO'];
             return directions[Math.round(deg / 45) % 8];
         }
 
-        // --- ASTRONOMÍA: CÁLCULO DEL SOL ---
-        function calculateSunPosition() {
-            const now = new Date();
-            const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / (1000 * 60 * 60 * 24));
-            
-            const declination = 23.45 * Math.sin((284 + dayOfYear) * Math.PI / 180);
-            const hours = now.getHours() + now.getMinutes() / 60;
-            const hourAngle = (hours - 12) * 15;
-
-            const latRad = userCoords.lat * Math.PI / 180;
-            const decRad = declination * Math.PI / 180;
-            const hourRad = hourAngle * Math.PI / 180;
-
-            const sinAlt = Math.sin(latRad) * Math.sin(decRad) + Math.cos(latRad) * Math.cos(decRad) * Math.cos(hourRad);
-            sunAltitude = Math.asin(sinAlt) * 180 / Math.PI;
-
-            const cosAz = (Math.sin(decRad) - Math.sin(latRad) * sinAlt) / (Math.cos(latRad) * Math.cos(Math.asin(sinAlt)));
-            let az = Math.acos(Math.min(Math.max(cosAz, -1), 1)) * 180 / Math.PI;
-            if (hourAngle > 0) az = 360 - az;
-
-            sunAzimuth = Math.round(az);
-            document.getElementById('sun-calc-pos').innerText = `${sunAzimuth}° (Alt: ${Math.round(sunAltitude)}°)`;
-
-            update3DSunPosition();
-        }
-
-        function alignWithSun3D() {
-            updateAzimuth(sunAzimuth);
-            showToast(`Brújula calibrada con el Sol a ${sunAzimuth}°`);
-        }
-
-        // --- ESCENA 3D (CÚPULA CELESTE) ---
+        // --- ESCENA 3D TÁCTIL ---
         function init3DScene() {
             const container = document.getElementById('dome-3d-container');
             const canvas = document.getElementById('dome-canvas');
 
             scene = new THREE.Scene();
             camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
-            camera.position.set(0, 1.5, 3);
+            camera.position.set(0, 1.8, 3.2);
             camera.lookAt(0, 0, 0);
 
             renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
             renderer.setSize(container.clientWidth, container.clientHeight);
 
+            // Cúpula alambre
             const domeGeo = new THREE.SphereGeometry(2, 16, 12, 0, Math.PI * 2, 0, Math.PI / 2);
             const domeMat = new THREE.MeshBasicMaterial({ color: 0x34495e, wireframe: true, transparent: true, opacity: 0.3 });
-            const domeMesh = new THREE.Mesh(domeGeo, domeMat);
-            scene.add(domeMesh);
+            scene.add(new THREE.Mesh(domeGeo, domeMat));
 
+            // Grupo rotable con el dedo (Flecha de dirección)
+            arrowGroup = new THREE.Group();
+            const arrowGeo = new THREE.ConeGeometry(0.1, 0.5, 8);
+            arrowGeo.rotateX(Math.PI / 2);
+            const arrowMat = new THREE.MeshBasicMaterial({ color: 0xe67e22 });
+            const arrowMesh = new THREE.Mesh(arrowGeo, arrowMat);
+            arrowMesh.position.set(0, 0, -1.2);
+            arrowGroup.add(arrowMesh);
+
+            // Centro (Punto naranja Yo)
+            const centerGeo = new THREE.SphereGeometry(0.12, 16, 16);
+            const centerMat = new THREE.MeshBasicMaterial({ color: 0xe67e22 });
+            arrowGroup.add(new THREE.Mesh(centerGeo, centerMat));
+            scene.add(arrowGroup);
+
+            // Sol referencial en el domo
             const sunGeo = new THREE.SphereGeometry(0.15, 16, 16);
-            const sunMat = new THREE.MeshBasicMaterial({ color: 0xf1c40f });
-            sunMesh = new THREE.Mesh(sunGeo, sunMat);
+            sunMesh = new THREE.Mesh(sunGeo, new THREE.MeshBasicMaterial({ color: 0xf1c40f }));
+            sunMesh.position.set(1.2, 1.2, -1.0);
             scene.add(sunMesh);
 
-            const dirGeo = new THREE.ConeGeometry(0.08, 0.4, 8);
-            dirGeo.rotateX(Math.PI / 2);
-            const dirMat = new THREE.MeshBasicMaterial({ color: 0xe67e22 });
-            phoneArrowMesh = new THREE.Mesh(dirGeo, dirMat);
-            scene.add(phoneArrowMesh);
+            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
-            scene.add(ambientLight);
+            // Eventos táctiles para arrastrar con el dedo
+            container.addEventListener('pointerdown', (e) => {
+                isDragging = true;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
 
+            container.addEventListener('pointermove', (e) => {
+                if (!isDragging) return;
+                const deltaX = e.clientX - previousMousePosition.x;
+                domeRotationY += deltaX * 0.01;
+                arrowGroup.rotation.y = domeRotationY;
+
+                // Calcular grados según rotación
+                let deg = (-domeRotationY * 180 / Math.PI) % 360;
+                if (deg < 0) deg += 360;
+                document.getElementById('touch-azimuth-val').innerText = `${Math.round(deg)}° (${getCardinal(deg)})`;
+
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            window.addEventListener('pointerup', () => { isDragging = false; });
             animate3D();
-        }
-
-        function update3DSunPosition() {
-            if (!sunMesh) return;
-            const phi = (90 - sunAltitude) * Math.PI / 180;
-            const theta = (sunAzimuth + 180) * Math.PI / 180;
-
-            sunMesh.position.x = 1.8 * Math.sin(phi) * Math.cos(theta);
-            sunMesh.position.y = 1.8 * Math.cos(phi);
-            sunMesh.position.z = 1.8 * Math.sin(phi) * Math.sin(theta);
         }
 
         function animate3D() {
             requestAnimationFrame(animate3D);
-            if (phoneArrowMesh) {
-                phoneArrowMesh.rotation.y = -currentAzimuth * Math.PI / 180;
-            }
             renderer.render(scene, camera);
+        }
+
+        function applyTouchOrientation() {
+            let deg = (-domeRotationY * 180 / Math.PI) % 360;
+            if (deg < 0) deg += 360;
+            updateAzimuth(Math.round(deg));
+            showToast(`Orientación fijada a ${Math.round(deg)}°`);
         }
 
         function onWindowResize() {
@@ -778,100 +706,70 @@
             renderer.setSize(container.clientWidth, container.clientHeight);
         }
 
-        // --- CÁLCULOS GEOMÉTRICOS ---
+        // --- CÁMARA Y MAPA ---
         function calculateDestinationPoint(lat, lng, azimuth, distanceMeters) {
             const R = 6371000;
             const brng = azimuth * Math.PI / 180;
             const d = distanceMeters;
-
             const lat1 = lat * Math.PI / 180;
             const lon1 = lng * Math.PI / 180;
 
-            const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d / R) +
-                Math.cos(lat1) * Math.sin(d / R) * Math.cos(brng));
+            const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d / R) + Math.cos(lat1) * Math.sin(d / R) * Math.cos(brng));
+            const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(d / R) * Math.cos(lat1), Math.cos(d / R) - Math.sin(lat1) * Math.sin(lat2));
 
-            const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(d / R) * Math.cos(lat1),
-                Math.cos(d / R) - Math.sin(lat1) * Math.sin(lat2));
-
-            return {
-                lat: lat2 * 180 / Math.PI,
-                lng: lon2 * 180 / Math.PI
-            };
+            return { lat: lat2 * 180 / Math.PI, lng: lon2 * 180 / Math.PI };
         }
 
-        // --- CÁMARA Y INTERACCIÓN EN LA FOTO ---
         async function toggleCamera() {
             const video = document.getElementById('camera-feed');
             const img = document.getElementById('captured-image');
-
             img.style.display = 'none';
             video.style.display = 'block';
             document.getElementById('camera-reticle').style.display = 'flex';
 
             try {
-                if (videoStream) {
-                    videoStream.getTracks().forEach(track => track.stop());
-                }
-                videoStream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: 'environment' },
-                    audio: false
-                });
+                if (videoStream) videoStream.getTracks().forEach(t => t.stop());
+                videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
                 video.srcObject = videoStream;
-            } catch (err) {
-                showToast("No se pudo acceder a la cámara nativa");
-            }
+            } catch (err) { showToast("Error al abrir cámara"); }
         }
 
         function capturePhoto() {
             const video = document.getElementById('camera-feed');
             const img = document.getElementById('captured-image');
-
-            if (!video.srcObject) {
-                showToast("Abrí primero la cámara");
-                return;
-            }
+            if (!video.srcObject) { showToast("Abrí primero la cámara"); return; }
 
             const canvas = document.createElement('canvas');
             canvas.width = video.videoWidth || 640;
             canvas.height = video.videoHeight || 480;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
 
             img.src = canvas.toDataURL('image/jpeg');
             video.style.display = 'none';
             img.style.display = 'block';
             document.getElementById('camera-reticle').style.display = 'none';
-
-            showToast("Foto tomada. Tocá el objeto en la imagen.");
+            showToast("Foto tomada. Tocá el objetivo.");
         }
 
         function markTargetOnImage(event) {
             const img = document.getElementById('captured-image');
             const rect = img.getBoundingClientRect();
-
             const clickX = event.clientX - rect.left;
-            const clickY = event.clientY - rect.top;
 
             const marker = document.getElementById('target-point');
             marker.style.left = `${event.clientX - img.parentElement.getBoundingClientRect().left}px`;
             marker.style.top = `${event.clientY - img.parentElement.getBoundingClientRect().top}px`;
             marker.style.display = 'block';
 
-            const centerX = rect.width / 2;
-            const offsetX = clickX - centerX;
-
+            const offsetX = clickX - (rect.width / 2);
             const fov = parseFloat(document.getElementById('camera-fov').value) || 60;
-            const degPerPixel = fov / rect.width;
-            const angularOffset = offsetX * degPerPixel;
+            const angularOffset = offsetX * (fov / rect.width);
 
-            const adjustedAzimuth = (currentAzimuth + angularOffset + 360) % 360;
-            updateAzimuth(adjustedAzimuth);
-            showToast(`Objetivo marcado. Desviación: ${Math.round(angularOffset)}°`);
+            updateAzimuth((currentAzimuth + angularOffset + 360) % 360);
+            showToast(`Desviación aplicada: ${Math.round(angularOffset)}°`);
         }
 
-        function recalculateTarget() {
-            updateMap();
-        }
+        function recalculateTarget() { updateMap(); }
     </script>
 </body>
 </html>
