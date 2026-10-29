@@ -494,7 +494,7 @@
                 </div>
             </div>
 
-            <!-- ALTÍMETRO DEM -->
+            <!-- ALTÍMETRO DEM (LIMPIO Y SIN TEXTO REPETIDO) -->
             <div id="tab-altimeter" class="tab-content">
                 <div class="sensor-grid">
                     <div class="sensor-card" style="grid-column: span 3;">
@@ -513,7 +513,7 @@
                 </div>
             </div>
 
-            <!-- INSTRUCTIVO -->
+            <!-- INSTRUCTIVO (Únicamente en su pestaña dedicada) -->
             <div id="help" class="tab-content instruction-box">
                 <h4>📖 Instructivo GeoCerro 3D</h4>
                 <p><b>1. Calibrar Orientación:</b> Usá la pestaña ☀️ <b>Sol 3D</b> arrastrando la esfera amarilla hasta la posición del sol en tu cielo y calculá el norte.</p>
@@ -1112,10 +1112,7 @@
             const angularOffset = offsetX * (fov / rect.width);
 
             updateAzimuth((currentAzimuth + angularOffset + 360) % 360);
-            
-            // Forzar actualización inmediata del mapa al marcar la foto
             updateMap();
-
             showToast(`Objetivo marcado. Desviación: ${Math.round(angularOffset)}°`);
         }
 
